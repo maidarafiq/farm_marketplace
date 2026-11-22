@@ -1,5 +1,7 @@
 const fs = require("fs")
 const path = require("path")
+const { test, describe, after } = require("node:test")
+const assert = require("node:assert/strict")
 
 // Point the app at a throwaway test database so we never touch marketplace.db
 const TEST_DB_PATH = path.join(__dirname, "test-marketplace.db")
@@ -13,47 +15,47 @@ const request = require("supertest")
 const app = require("../server")
 
 describe("GET /api/health", () => {
-  it("returns status ok and a version string", async () => {
+  test("returns status ok and a version string", async () => {
     const res = await request(app).get("/api/health")
-    expect(res.status).toBe(200)
-    expect(res.body.status).toBe("ok")
-    expect(typeof res.body.version).toBe("string")
+    assert.equal(res.status, 200)
+    assert.equal(res.body.status, "ok")
+    assert.equal(typeof res.body.version, "string")
   })
 })
 
 describe("GET /api/products", () => {
-  it("returns the seeded list of products", async () => {
+  test("returns the seeded list of products", async () => {
     const res = await request(app).get("/api/products")
-    expect(res.status).toBe(200)
-    expect(Array.isArray(res.body)).toBe(true)
-    expect(res.body.length).toBeGreaterThan(0)
+    assert.equal(res.status, 200)
+    assert.ok(Array.isArray(res.body))
+    assert.ok(res.body.length > 0)
   })
 
-  it("returns products with the expected shape", async () => {
+  test("returns products with the expected shape", async () => {
     const res = await request(app).get("/api/products")
     const product = res.body[0]
-    expect(product).toHaveProperty("id")
-    expect(product).toHaveProperty("name")
-    expect(product).toHaveProperty("farmer")
-    expect(product).toHaveProperty("price")
+    assert.ok("id" in product)
+    assert.ok("name" in product)
+    assert.ok("farmer" in product)
+    assert.ok("price" in product)
   })
 })
 
 describe("POST /api/order", () => {
-  it("confirms an order and includes the item names in the message", async () => {
+  test("confirms an order and includes the item names in the message", async () => {
     const res = await request(app)
       .post("/api/order")
       .send({ items: [{ name: "Mangoes" }, { name: "Carrots" }] })
       .set("Content-Type", "application/json")
 
-    expect(res.status).toBe(200)
-    expect(res.body.success).toBe(true)
-    expect(res.body.message).toContain("Mangoes")
-    expect(res.body.message).toContain("Carrots")
+    assert.equal(res.status, 200)
+    assert.equal(res.body.success, true)
+    assert.ok(res.body.message.includes("Mangoes"))
+    assert.ok(res.body.message.includes("Carrots"))
   })
 })
 
-afterAll(() => {
+after(() => {
   // Clean up the test database file
   if (fs.existsSync(TEST_DB_PATH)) fs.unlinkSync(TEST_DB_PATH)
 })

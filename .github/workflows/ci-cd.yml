@@ -1,0 +1,155 @@
+name: CI/CD - Build, Scan, S3, Deploy
+
+# Runs on every push to main: this is the "Git Push -> GitHub Actions Trigger" step
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # lets you also trigger it manually from the Actions tab
+
+env:
+  NODE_VERSION: "20"
+  S3_BUCKET: ${{ secrets.S3_BUCKET }}
+
+jobs:
+  # ---------------------------------------------------------------------
+  # 1. Automated unit tests (backend). Pipeline stops here if they fail.
+  # ---------------------------------------------------------------------
+  test-backend:
+    name: Backend unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
+
+  # ---------------------------------------------------------------------
+  # 2. Automated unit tests (frontend). Pipeline stops here if they fail.
+  # ---------------------------------------------------------------------
+  test-frontend:
+    name: Frontend unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Run frontend tests
+        working-directory: frontend
+        run: CI=true npm test
+
+  # ---------------------------------------------------------------------
+  # Bonus (DevSecOps): dependency vulnerability scan + CodeQL static analysis.
+  # Runs in parallel with the test jobs; doesn't block them.
+  # ---------------------------------------------------------------------
+  security-scan:
+    name: Security scan (npm audit + CodeQL)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Dependency vulnerability scan - backend
+        working-directory: backend
+        run: npm audit --audit-level=high || echo "::warning::npm audit found issues in backend - review above"
+
+      - name: Dependency vulnerability scan - frontend
+        working-directory: frontend
+        run: npm audit --audit-level=high || echo "::warning::npm audit found issues in frontend - review above"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+
+      - name: Run CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+
+  # ---------------------------------------------------------------------
+  # 3. Build, package, and upload the artifact to S3.
+  #    Only runs if both test jobs passed.
+  # ---------------------------------------------------------------------
+  build-and-upload:
+    name: Build & upload artifact to S3
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: ${{ steps.vars.outputs.artifact_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build frontend (React production build)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Assemble release package
+        run: |
+          mkdir -p release/backend release/frontend
+          # Backend source only - no node_modules. The server will npm ci on EC2
+          # so the native better-sqlite3 binding is built for that exact host.
+          cp backend/server.js backend/package.json backend/package-lock.json release/backend/
+          # Frontend production build (static files Nginx will serve)
+          cp -r frontend/build/* release/frontend/
+          # Deployment helper scripts used on the EC2 side
+          cp -r infra release/infra
+
+      - name: Create versioned zip
+        id: vars
+        run: |
+          VERSION="build-${{ github.run_number }}.zip"
+          echo "artifact_name=$VERSION" >> "$GITHUB_OUTPUT"
+          cd release && zip -r "../$VERSION" .
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload versioned build to S3
+        run: |
+          aws s3 cp "${{ steps.vars.outputs.artifact_name }}" "s3://${S3_BUCKET}/builds/${{ steps.vars.outputs.artifact_name }}"
+          # Also publish as "latest.zip" so the deploy step always grabs
+          # the most recent successful build, per the assignment spec.
+          aws s3 cp "${{ steps.vars.outputs.artifact_name }}" "s3://${S3_BUCKET}/builds/latest.zip"
+
+  # ---------------------------------------------------------------------
+  # 4. Deploy: EC2 pulls the latest build from S3 and restarts the app.
+  # ---------------------------------------------------------------------
+  deploy:
+    name: Deploy latest build to EC2
+    needs: build-and-upload
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            bash /opt/farm-marketplace/infra/deploy.sh

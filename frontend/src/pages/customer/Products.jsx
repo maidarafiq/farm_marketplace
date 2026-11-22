@@ -27,6 +27,7 @@ export default function Products() {
   const [added, setAdded] = useState(null)
   const [orderMsg, setOrderMsg] = useState("")
   const [cartOpen, setCartOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
 
 
 
@@ -74,6 +75,10 @@ useEffect(() => {
   function removeFromCart(productId) {
     setCart(prev => prev.filter(i => i.id !== productId))
   }
+
+  const visibleProducts = products.filter(p =>
+    p.name.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   const cartCount = cart.reduce((sum, i) => sum + i.qty, 0)
   const cartTotal = cart.reduce((sum, i) => sum + i.qty * i.price, 0)
@@ -161,8 +166,23 @@ useEffect(() => {
 
       {/* Hero */}
       <div style={{ backgroundColor: "#2d6a4f", padding: "36px 32px", color: "white" }}>
-        <h1 style={{ margin: 0, fontSize: 28 }}>Fresh From the Farm — Order Now</h1>
+        <h1 style={{ margin: 0, fontSize: 28 }}>Fresh From the Farm</h1>
         <p style={{ margin: "8px 0 0", color: "#b7e4c7" }}>Direct from farmers to your doorstep</p>
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          placeholder="Search produce by name..."
+          style={{
+            marginTop: 16,
+            width: "100%",
+            maxWidth: 400,
+            padding: "10px 14px",
+            borderRadius: 8,
+            border: "none",
+            fontSize: 14
+          }}
+        />
       </div>
 
       {/* Order success message */}
@@ -181,7 +201,10 @@ useEffect(() => {
 
       {/* Product Grid */}
       <div style={{ padding: "32px", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
-        {products.map(product => {
+        {visibleProducts.length === 0 && (
+          <p style={{ color: "#888", gridColumn: "1 / -1" }}>No produce matches your search.</p>
+        )}
+        {visibleProducts.map(product => {
           const meta = products_tags.find(t => t.id === product.id) || {}
           const inCart = cart.find(i => i.id === product.id)
           return (
@@ -267,4 +290,3 @@ useEffect(() => {
     </div>
   )
 }
-

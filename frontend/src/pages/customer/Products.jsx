@@ -9,11 +9,24 @@ const products_tags = [
   { id: 6, tag: "Fresh", image: "https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=300&h=200&fit=crop&auto=format" }
 ]
 
+const qtyBtnStyle = {
+  width: 22,
+  height: 22,
+  border: "1px solid #ddd",
+  borderRadius: 4,
+  background: "white",
+  cursor: "pointer",
+  fontSize: 14,
+  lineHeight: 1,
+  padding: 0
+}
+
 export default function Products() {
   const [products, setProducts] = useState([])
   const [cart, setCart] = useState([])
   const [added, setAdded] = useState(null)
   const [orderMsg, setOrderMsg] = useState("")
+  const [cartOpen, setCartOpen] = useState(false)
 
 
 
@@ -42,23 +55,41 @@ useEffect(() => {
 
   function addToCart(product) {
     const already = cart.find(i => i.id === product.id)
-    if (!already) {
-      setCart([...cart, product])
+    if (already) {
+      setCart(cart.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i))
+    } else {
+      setCart([...cart, { ...product, qty: 1 }])
     }
     setAdded(product.id)
     setTimeout(() => setAdded(null), 1500)
   }
 
+  function changeQty(productId, delta) {
+    setCart(prev => prev
+      .map(i => i.id === productId ? { ...i, qty: i.qty + delta } : i)
+      .filter(i => i.qty > 0)
+    )
+  }
+
+  function removeFromCart(productId) {
+    setCart(prev => prev.filter(i => i.id !== productId))
+  }
+
+  const cartCount = cart.reduce((sum, i) => sum + i.qty, 0)
+  const cartTotal = cart.reduce((sum, i) => sum + i.qty * i.price, 0)
+
   async function placeOrder() {
     if (cart.length === 0) return
+    const orderItems = cart.flatMap(i => Array(i.qty).fill({ name: i.name }))
     const res = await fetch("/api/order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: cart })
+      body: JSON.stringify({ items: orderItems })
     })
     const data = await res.json()
     setOrderMsg(data.message)
     setCart([])
+    setCartOpen(false)
     setTimeout(() => setOrderMsg(""), 4000)
   }
 
@@ -70,19 +101,63 @@ useEffect(() => {
         <span style={{ color: "white", fontWeight: "bold", fontSize: 20 }}>🌿 FarmFresh</span>
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <span style={{ color: "#b7e4c7", fontSize: 15 }}>Browse Produce</span>
-          <div style={{
-            backgroundColor: "#52b788",
-            color: "white",
-            borderRadius: 20,
-            padding: "6px 16px",
-            fontSize: 14,
-            fontWeight: "bold",
-            cursor: "pointer"
-          }}>
-            🛒 Cart ({cart.length})
-          </div>
+          <button
+            onClick={() => setCartOpen(o => !o)}
+            style={{
+              backgroundColor: "#52b788",
+              color: "white",
+              borderRadius: 20,
+              padding: "6px 16px",
+              fontSize: 14,
+              fontWeight: "bold",
+              cursor: "pointer",
+              border: "none"
+            }}>
+            🛒 Cart ({cartCount})
+          </button>
         </div>
       </nav>
+
+      {/* Cart panel — toggled from the navbar button */}
+      {cartOpen && (
+        <div style={{
+          position: "fixed",
+          top: 60,
+          right: 24,
+          width: 320,
+          backgroundColor: "white",
+          borderRadius: 12,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+          zIndex: 10,
+          padding: 16
+        }}>
+          <h3 style={{ margin: "0 0 12px", color: "#1b4332" }}>Your Cart</h3>
+          {cart.length === 0 ? (
+            <p style={{ color: "#888", fontSize: 14 }}>Your cart is empty.</p>
+          ) : (
+            <>
+              {cart.map(item => (
+                <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ fontSize: 14, color: "#1b4332" }}>
+                    <div>{item.name}</div>
+                    <div style={{ color: "#888", fontSize: 12 }}>Rs. {item.price} / {item.unit}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <button onClick={() => changeQty(item.id, -1)} style={qtyBtnStyle}>−</button>
+                    <span style={{ minWidth: 18, textAlign: "center" }}>{item.qty}</span>
+                    <button onClick={() => changeQty(item.id, 1)} style={qtyBtnStyle}>+</button>
+                    <button onClick={() => removeFromCart(item.id)} style={{ ...qtyBtnStyle, color: "#c0392b", marginLeft: 4 }}>×</button>
+                  </div>
+                </div>
+              ))}
+              <div style={{ borderTop: "1px solid #eee", marginTop: 10, paddingTop: 10, display: "flex", justifyContent: "space-between", fontWeight: "bold", color: "#1b4332" }}>
+                <span>Total</span>
+                <span>Rs. {cartTotal}</span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Hero */}
       <div style={{ backgroundColor: "#2d6a4f", padding: "36px 32px", color: "white" }}>
@@ -140,7 +215,7 @@ useEffect(() => {
                     cursor: "pointer"
                   }}
                 >
-                  {inCart ? "✓ In Cart" : added === product.id ? "✓ Added!" : "Add to Cart"}
+                  {inCart ? `✓ In Cart (${inCart.qty})` : added === product.id ? "✓ Added!" : "Add to Cart"}
                 </button>
               </div>
             </div>
@@ -164,8 +239,8 @@ useEffect(() => {
           boxShadow: "0 -4px 12px rgba(0,0,0,0.2)"
         }}>
           <div>
-            <strong>{cart.length} item{cart.length > 1 ? "s" : ""} in cart:</strong>{" "}
-            <span style={{ color: "#b7e4c7" }}>{cart.map(i => i.name).join(", ")}</span>
+            <strong>{cartCount} item{cartCount > 1 ? "s" : ""} in cart</strong>{" "}
+            <span style={{ color: "#b7e4c7" }}>— Rs. {cartTotal}</span>
           </div>
           <button
             onClick={placeOrder}
@@ -192,3 +267,4 @@ useEffect(() => {
     </div>
   )
 }
+

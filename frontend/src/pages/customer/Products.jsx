@@ -161,7 +161,7 @@ useEffect(() => {
 
       {/* Hero */}
       <div style={{ backgroundColor: "#2d6a4f", padding: "36px 32px", color: "white" }}>
-        <h1 style={{ margin: 0, fontSize: 28 }}>Fresh From the Farm</h1>
+        <h1 style={{ margin: 0, fontSize: 28 }}>Fresh From the Farm — Order Now</h1>
         <p style={{ margin: "8px 0 0", color: "#b7e4c7" }}>Direct from farmers to your doorstep</p>
       </div>
 

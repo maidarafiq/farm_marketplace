@@ -15,7 +15,7 @@ export default function Products() {
   const [added, setAdded] = useState(null)
   const [orderMsg, setOrderMsg] = useState("")
 
-  
+
 
 useEffect(() => {
   fetch("/api/products", {

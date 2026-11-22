@@ -5,13 +5,18 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
+// App version - bump this to demonstrate a visible change through the pipeline
+const APP_VERSION = "1.0.0"
+
 // Connect to database (creates the file if it doesn't exist)
 const path = require("path")
 
 const dbPath = process.env.DB_PATH ||
   path.join(__dirname, "marketplace.db")
 
-const db = new Database(dbPath)// Create tables
+const db = new Database(dbPath)
+
+// Create tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY,
@@ -45,6 +50,13 @@ if (count.c === 0) {
   console.log("Database seeded with products.")
 }
 
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    version: APP_VERSION
+  })
+})
+
 app.get("/api/products", (req, res) => {
   console.log("Fetching products from database...")
   const products = db.prepare("SELECT * FROM products").all()
@@ -55,21 +67,21 @@ app.post("/api/order", (req, res) => {
   const { items } = req.body
   const itemNames = items.map(i => i.name).join(", ")
   const placedAt = new Date().toISOString()
-  
+
   db.prepare("INSERT INTO orders (items, placed_at) VALUES (?, ?)").run(itemNames, placedAt)
-  
+
   console.log(`Order saved to database: ${itemNames}`)
   res.json({ success: true, message: `Order confirmed for: ${itemNames}` })
 })
 
 const PORT = process.env.PORT || 5000
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "ok",
-    version: "1.0.0"
-  })
-})
 
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`Backend running on port ${PORT}`)
-})
+// Only start listening when this file is run directly (node server.js),
+// not when it's required by a test file.
+if (require.main === module) {
+  app.listen(PORT, "127.0.0.1", () => {
+    console.log(`Backend running on port ${PORT}`)
+  })
+}
+
+module.exports = app
